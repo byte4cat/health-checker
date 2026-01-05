@@ -79,24 +79,35 @@ func (s *Service) CheckHealth() ([]*models.CheckResult, error) {
 		return nil, errs.ErrWatcherNotFound
 	}
 
-	var result []*models.CheckResult
-	var rwLocker sync.RWMutex
+	result := make([]*models.CheckResult, len(watchers))
 	var wg sync.WaitGroup
-	for _, w := range watchers {
+	for i, w := range watchers {
 		wg.Add(1)
-		go func(w *models.Watcher) {
+		wCopy := w
+		go func(index int, wInner *models.Watcher) {
 			defer wg.Done()
-			if w.Type == enums.Watcher_HTTP {
-				rwLocker.Lock()
-				result = append(result, s.checkHttp(w))
-				rwLocker.Unlock()
+			if wInner.Type == enums.Watcher_HTTP {
+				result[index] = s.checkHttp(wInner)
 			}
-		}(w)
+		}(i, wCopy)
 	}
 
 	wg.Wait()
 
+	// TODO: This is a hack, in a separate command would be better, but I'm being lazy
+	s.restartingHealthyWatchers(watchers, result)
+
 	return result, nil
+}
+
+func (s *Service) restartingHealthyWatchers(watchers []*models.Watcher, results []*models.CheckResult) {
+	for i, w := range watchers {
+		res := results[i]
+		if res != nil && res.Status && w.GetCronID() == 0 {
+			s.AddWatcher(w)
+			logger.Infof("✅ Auto-restarted watcher for %s", w.Name)
+		}
+	}
 }
 
 // check if the http service is running
