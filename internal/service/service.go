@@ -121,7 +121,9 @@ func (s *Service) checkHttp(w *models.Watcher) *models.CheckResult {
 		logger.Errorf("Error checking http service %s: %v", w.Name, err)
 	}
 
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
 	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
@@ -137,7 +139,7 @@ func (s *Service) checkHttp(w *models.Watcher) *models.CheckResult {
 
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		logger.Errorf("Error checking http service %s, status code: %v", w.Name, resp.StatusCode)
 		return &models.CheckResult{
 			Name:         w.Name,
