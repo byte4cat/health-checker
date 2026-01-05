@@ -26,7 +26,7 @@ func New(env *config.Config) (*gorm.DB, error) {
 	if _, err := os.Stat("./bot_files"); os.IsNotExist(err) {
 		err := os.Mkdir("./bot_files", os.ModePerm)
 		if err != nil {
-			logger.Panicf("Error creating bot_files folder: " + err.Error())
+			logger.Panicf("Error creating bot_files folder: %v", err.Error())
 		}
 	}
 

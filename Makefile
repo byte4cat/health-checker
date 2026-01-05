@@ -5,6 +5,7 @@ PACKAGES ?= $(shell $(GO) list ./...)
 GO_FILES := $(shell find . -name "*.go" -not -path "./vendor/*" -not -path ".git/*")
 TEST_TAGS ?= ""
 GIT_COMMIT_SHA := $(shell git rev-parse HEAD | cut -c 1-8)
+GOLINT := $(shell which golangci-lint)
 
 default: dev
 
@@ -26,14 +27,12 @@ tidy:
 	@go fmt ./...
 
 lint:
-	@hash golint > /dev/null 2>&1; if [ $$? -ne 0 ]; then \
-		$(GO) get -u golang.org/x/lint/golint; \
+	@if [ -z "$(GOLINT)" ]; then \
+		echo "golangci-lint not found, installing..."; \
+		$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest; \
 	fi
-	@for PKG in $(PACKAGES); do golint -set_exit_status $$PKG || exit 1; done;
+	@golangci-lint run ./...
 
 install-tools:
-	if [ $(GO_VERSION) -gt 15 ]; then \
-		$(GO) install golang.org/x/lint/golint@latest; \
-	elif [ $(GO_VERSION) -lt 16 ]; then \
-		$(GO) install golang.org/x/lint/golint; \
-	fi
+	$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	$(GO) install github.com/githubnemo/CompileDaemon@latest

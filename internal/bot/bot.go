@@ -25,20 +25,20 @@ func New() *Bot {
 	if _, err := os.Stat("./bot_files"); os.IsNotExist(err) {
 		err := os.Mkdir("./bot_files", os.ModePerm)
 		if err != nil {
-			logger.Panicf("Error creating bot_files folder: " + err.Error())
+			logger.Panicf("Error creating bot_files folder: %v", err.Error())
 		}
 	}
 
 	cfg := config.New()
 	db, err := database.New(cfg)
 	if err != nil {
-		logger.Panicf("Error creating database: " + err.Error())
+		logger.Panicf("Error creating database: %v", err.Error())
 	}
 	repo := repository.New(db)
 
 	session, err := discordgo.New("Bot " + cfg.DiscordToken)
 	if err != nil {
-		logger.Panicf("Error creating Discord session: " + err.Error())
+		logger.Panicf("Error creating Discord session: %v", err.Error())
 	}
 
 	// Defining location using FixedZone method

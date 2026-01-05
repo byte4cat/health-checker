@@ -104,7 +104,11 @@ func (s *Service) restartingHealthyWatchers(watchers []*models.Watcher, results 
 	for i, w := range watchers {
 		res := results[i]
 		if res != nil && res.Status && w.GetCronID() == 0 {
-			s.AddWatcher(w)
+			err := s.AddWatcher(w)
+			if err != nil {
+				logger.Error("Failed to restart healthy watchers")
+				return
+			}
 			logger.Infof("✅ Auto-restarted watcher for %s", w.Name)
 		}
 	}
@@ -239,11 +243,14 @@ func (s *Service) WatchHttp(watcher *models.Watcher) error {
 
 			// send stop watcher notification to channel
 			finalMsg := fmt.Sprintf("[%s] Service %s exceeded max retries. Monitoring stopped.", timeNowString, w.Name)
-			s.Session.ChannelMessageSendEmbed(s.Cfg.NotificationChannnel, &discordgo.MessageEmbed{
+			_, err := s.Session.ChannelMessageSendEmbed(s.Cfg.NotificationChannnel, &discordgo.MessageEmbed{
 				Title:       "🚫 Monitoring Stopped",
 				Description: finalMsg,
 				Color:       0x000000,
 			})
+			if err != nil {
+				logger.Errorf("Error sending message to channel %s: %v", s.Cfg.NotificationChannnel, err)
+			}
 			return nil
 		}
 
