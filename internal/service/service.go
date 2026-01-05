@@ -33,34 +33,36 @@ func (s *Service) InitWatchers() error {
 	}
 
 	for _, w := range watchers {
-		err := s.AddWatcher(w)
+		wCopy := w
+		err := s.AddWatcher(wCopy)
 		if err != nil {
-			logger.Errorf("Error adding watcher %s: %v", w.Name, err)
+			logger.Errorf("Error adding watcher %s: %v", wCopy.Name, err)
 			return err
 		}
-		logger.Infof("✅ Add watcher %s", w.Name)
+		logger.Infof("✅ Add watcher %s", wCopy.Name)
 	}
 
 	return nil
 }
 
 func (s *Service) AddWatcher(w *models.Watcher) error {
-	cronID, err := s.Cron.AddFunc(w.GetCronExpression(), func() {
+	wCopy := w
+	cronID, err := s.Cron.AddFunc(wCopy.GetCronExpression(), func() {
 		if w.Type == enums.Watcher_HTTP {
-			err := s.WatchHttp(w)
+			err := s.WatchHttp(wCopy)
 			if err != nil {
-				logger.Errorf("Error watching http service %s: %v", w.Name, err)
+				logger.Errorf("Error watching http service %s: %v", wCopy.Name, err)
 				return
 			}
 		}
 	})
 
 	if err != nil {
-		logger.Errorf("Error adding watcher %s to cron: %v", w.Name, err)
+		logger.Errorf("Error adding watcher %s to cron: %v", wCopy.Name, err)
 		return err
 	}
 
-	w.SetCronID(cronID)
+	wCopy.SetCronID(cronID)
 
 	return nil
 }
@@ -137,6 +139,11 @@ func (s *Service) checkHttp(w *models.Watcher) *models.CheckResult {
 }
 
 func (s *Service) WatchHttp(watcher *models.Watcher) error {
+	if watcher == nil || watcher.ID == "" {
+		logger.Errorf("WatchHttp received an empty watcher ID! Current Name: %s", watcher.Name)
+		return fmt.Errorf("invalid watcher id")
+	}
+
 	// get watcher by ID, it makes sure the watcher has not been deleted or updated
 	w, err := s.Repo.FindWatcherByID(watcher.ID)
 	if err != nil {
@@ -152,6 +159,10 @@ func (s *Service) WatchHttp(watcher *models.Watcher) error {
 	}
 
 	// Defining location using FixedZone method
+	if w.Location == "" {
+		logger.Errorf("Watcher %s has no location URL", w.Name)
+		return fmt.Errorf("empty location")
+	}
 	result := s.checkHttp(w)
 	defer func() {
 		w.SetLastStatus(result.Status)
@@ -205,7 +216,27 @@ func (s *Service) WatchHttp(watcher *models.Watcher) error {
 	if !result.Status {
 		// logger.Debugf("Service %s is down, Last status: %v, current status: %v", w.Name, w.GetLastStatus(), result.Status)
 		w.AddContinueErrorTimes()
-		if w.GetContinueErrorTimes() >= 3 {
+		errCount := w.GetContinueErrorTimes()
+
+		maxRetries := 20
+		if errCount > maxRetries {
+			logger.Errorf("❌ Service %s has exceeded max retries (%d). Stopping watcher.", w.Name, maxRetries)
+
+			// stop the Cron job, no more retries
+			s.Cron.Remove(w.GetCronID())
+			w.RemoveCronID()
+
+			// send stop watcher notification to channel
+			finalMsg := fmt.Sprintf("[%s] Service %s exceeded max retries. Monitoring stopped.", timeNowString, w.Name)
+			s.Session.ChannelMessageSendEmbed(s.Cfg.NotificationChannnel, &discordgo.MessageEmbed{
+				Title:       "🚫 Monitoring Stopped",
+				Description: finalMsg,
+				Color:       0x000000,
+			})
+			return nil
+		}
+
+		if errCount >= 3 {
 			// remove cron by cronID
 			s.Cron.Remove(w.GetCronID())
 			w.RemoveCronID()
@@ -226,7 +257,7 @@ func (s *Service) WatchHttp(watcher *models.Watcher) error {
 			w.SetCronID(cronID)
 
 			logger.Warnf("🔥 Service %s is down", w.Name)
-			message := fmt.Sprintf("[%s] Service %s is down, will retry in %v seconds", timeNowString, w.Name, w.Interval*w.GetContinueErrorTimes()*3)
+			message := fmt.Sprintf("[%s] Service %s is down, will retry in %v seconds", timeNowString, w.Name, w.Interval*errCount*3)
 			embedMsg := &discordgo.MessageEmbed{
 				Title:       "🔥 Service is down",
 				Description: message,

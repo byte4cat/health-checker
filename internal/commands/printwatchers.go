@@ -50,6 +50,8 @@ func (c *CommandPrintWatchers) Exec(ctx *bot.Context) (err error) {
 	}
 	t.SetStyle(table.StyleLight)
 
+	t.Render()
+
 	text := strings.Split(t.Render(), "\n")
 
 	br, err := utils.GenerateImage(text)
